@@ -1,0 +1,17 @@
+# Exclude web app
+web/
+
+# Dependencies and build output
+node_modules/
+dist/
+
+# Git and env
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Misc
+*.log
+.DS_Store
