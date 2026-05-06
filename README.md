@@ -8,54 +8,11 @@ Guardx consumes Eigen's AppController and ReleaseManager on-chain contracts, rec
 
 This closes a critical trust gap in verifiable compute: even if a TEE guarantees code integrity, someone still needs to answer _"is the code inside worth trusting?"_
 
----
+## Live Demo
 
-## How It Works
-
-```
-Eigen Verify Link
-       │
-       ▼
-┌──────────────┐     on-chain      ┌─────────────────────┐
-│  AppController│ ──────────────▶  │   ReleaseManager    │
-│  (get operator│                  │   (getLatestRelease) │
-│   set ID)     │                  │   → registry + digest│
-└──────────────┘                   └──────────┬──────────┘
-                                              │
-                                              ▼
-                                   ┌─────────────────────┐
-                                   │  Docker Registry API │
-                                   │  (fetch manifest +   │
-                                   │   layer blobs)       │
-                                   └──────────┬──────────┘
-                                              │
-                                              ▼
-                                   ┌─────────────────────┐
-                                   │  Layer Selection     │
-                                   │  (AI picks app layer)│
-                                   └──────────┬──────────┘
-                                              │
-                                              ▼
-                                   ┌─────────────────────┐
-                                   │  Code Extraction     │
-                                   │  (entry point +      │
-                                   │   import tracing)    │
-                                   └──────────┬──────────┘
-                                              │
-                              ┌───────────────┼───────────────┐
-                              ▼                               ▼
-                   ┌───────────────────┐           ┌───────────────────┐
-                   │  Security Audit   │           │  Chat Agent       │
-                   │  (AI analysis)    │           │  (conversational  │
-                   │                   │           │   code Q&A)       │
-                   └────────┬──────────┘           └────────┬──────────┘
-                            │                               │
-                            ▼                               ▼
-                   ┌─────────────────────────────────────────────────┐
-                   │           Cryptographic Attestation              │
-                   │  (EIP-191 signed verdict with content hash)     │
-                   └─────────────────────────────────────────────────┘
-```
+- **Web Interface(Deployed on Vercel)**: [https://guardx-eight.vercel.app/](https://guardx-eight.vercel.app/)
+- **API Server (Deployed on Eigen Compute)**: [https://guardx.buildweekends.com/](https://guardx.buildweekends.com/)
+- **Eigen Explorer**: [https://verify-sepolia.eigencloud.xyz/app/0x5859d301686F0006e398d3Ab1B7FB659A97c14b5](https://verify-sepolia.eigencloud.xyz/app/0x5859d301686F0006e398d3Ab1B7FB659A97c14b5)
 
 ## Features
 
@@ -79,9 +36,7 @@ Eigen Verify Link
 - Attestations include signer address, SHA-256 content hash, timestamp, and EIP-191 signature
 - Anyone can independently verify that a verdict came from a specific Guardx instance inside a TEE
 
----
-
-## Project Structure
+### Codebase Structure
 
 ```
 ├── src/
@@ -128,7 +83,7 @@ Eigen Verify Link
 ### Prerequisites
 
 - Node.js 20+
-- An [OpenAI API key](https://platform.openai.com/api-keys)
+- Eigen AI Gateway credentials (for `@layr-labs/ai-gateway-provider`)
 - An [Alchemy API key](https://www.alchemy.com/) (for Ethereum RPC)
 
 ### Setup
@@ -146,7 +101,7 @@ npm install --prefix web
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your OPENAI_API_KEY and ALCHEMY_API_KEY
+# Edit .env with your Eigen AI Gateway credentials and ALCHEMY_API_KEY
 ```
 
 ### Development
@@ -196,15 +151,65 @@ docker run -p 3000:3000 --env-file .env guardx
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for AI analysis and chat |
+| Gateway credentials | Yes | Credentials/config required by Eigen AI Gateway provider |
 | `ALCHEMY_API_KEY` | Yes | Alchemy API key for Ethereum RPC calls |
 | `MNEMONIC` | No | Mnemonic for signing responses (set by Eigen KMS in production) |
 | `PORT` | No | Server port (default: 3000) |
-| `OPENAI_MODEL` | No | Override the OpenAI model (default: gpt-5.2 for analysis, gpt-5-mini for chat) |
-| `DC_EXPLORER_LEGACY_LAYER` | No | Set to `1` to use legacy "npm run build" layer selection |
+
+### AI Model Routing
+
+- Analysis: `anthropic/claude-sonnet-4.6`
+- Chat: `anthropic/claude-sonnet-4.6`
+- Layer extraction/selection: `openai/gpt-4o`
+
+All model calls go through Eigen Gateway using `@layr-labs/ai-gateway-provider` and `ai`.
 
 ---
 
-## License
+## Architecture Flow
 
-MIT
+```
+Eigen Verify Link
+       │
+       ▼
+┌──────────────┐     on-chain      ┌─────────────────────┐
+│  AppController│ ──────────────▶  │   ReleaseManager    │
+│  (get operator│                  │   (getLatestRelease) │
+│   set ID)     │                  │   → registry + digest│
+└──────────────┘                   └──────────┬──────────┘
+                                              │
+                                              ▼
+                                   ┌─────────────────────┐
+                                   │  Docker Registry API │
+                                   │  (fetch manifest +   │
+                                   │   layer blobs)       │
+                                   └──────────┬──────────┘
+                                              │
+                                              ▼
+                                   ┌─────────────────────┐
+                                   │  Layer Selection     │
+                                   │  (AI picks app layer)│
+                                   └──────────┬──────────┘
+                                              │
+                                              ▼
+                                   ┌─────────────────────┐
+                                   │  Code Extraction     │
+                                   │  (entry point +      │
+                                   │   import tracing)    │
+                                   └──────────┬──────────┘
+                                              │
+                              ┌───────────────┼───────────────┐
+                              ▼                               ▼
+                   ┌───────────────────┐           ┌───────────────────┐
+                   │  Security Audit   │           │  Chat Agent       │
+                   │  (AI analysis)    │           │  (conversational  │
+                   │                   │           │   code Q&A)       │
+                   └────────┬──────────┘           └────────┬──────────┘
+                            │                               │
+                            ▼                               ▼
+                   ┌─────────────────────────────────────────────────┐
+                   │           Cryptographic Attestation              │
+                   │  (EIP-191 signed verdict with content hash)     │
+                   └─────────────────────────────────────────────────┘
+```
+

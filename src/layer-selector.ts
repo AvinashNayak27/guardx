@@ -1,9 +1,10 @@
 /**
  * AI-powered layer selection - analyzes Docker manifest to pick the layer
- * containing application code. Requires OPENAI_API_KEY.
+ * containing application code.
  */
 
-import OpenAI from "openai";
+import { eigen } from "@layr-labs/ai-gateway-provider";
+import { generateText, Output } from "ai";
 import type { ImageConfig } from "./types.js";
 import type { LayerInfo } from "./layers.js";
 
@@ -35,11 +36,6 @@ export interface LayerSelectionResult {
 export async function selectLayerWithAI(
   input: LayerSelectionInput
 ): Promise<LayerSelectionResult | { error: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { error: "OPENAI_API_KEY is required for layer selection" };
-  }
-
   const manifestSummary = {
     layers: input.layers.map((l, i) => ({
       index: l.index,
@@ -50,60 +46,28 @@ export async function selectLayerWithAI(
     config: input.config,
   };
 
-  const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o";
+  const model = "openai/gpt-4o";
   console.error(`[layer-selector] Calling ${model} with ${input.layers.length} layers`);
 
-  const tools: OpenAI.Chat.ChatCompletionTool[] = [
-    {
-      type: "function",
-      function: {
-        name: "select_app_layer",
-        description: "Select which layer index (1-based) contains the application source code",
-        parameters: {
-          type: "object",
-          properties: {
-            layerIndex: {
-              type: "number",
-              description: "1-based layer index",
-            },
-            reasoning: {
-              type: "string",
-              description: "Brief explanation",
-            },
-          },
-          required: ["layerIndex"],
-        },
-      },
-    },
-  ];
-
   try {
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: MANIFEST_ANALYSIS_PROMPT },
-        {
-          role: "user",
-          content: `Analyze this Docker manifest and select the app layer:\n\n${JSON.stringify(manifestSummary, null, 2)}`,
-        },
-      ],
-      tools,
-      tool_choice: { type: "function", function: { name: "select_app_layer" } },
-      temperature: 0.2,
+    const prompt = `${MANIFEST_ANALYSIS_PROMPT}
+
+Analyze this Docker manifest and select the app layer:
+
+${JSON.stringify(manifestSummary, null, 2)}
+
+Return valid JSON only with this shape:
+{"layerIndex": number, "reasoning": "brief explanation"}`;
+    const { output } = await generateText({
+      model: eigen(model),
+      output: Output.json(),
+      prompt,
     });
 
-    const toolCall = completion.choices[0]?.message?.tool_calls?.[0];
-    if (!toolCall || toolCall.function.name !== "select_app_layer") {
-      return { error: "AI did not return layer selection" };
-    }
-
-    let args: { layerIndex?: number; reasoning?: string };
-    try {
-      args = JSON.parse(toolCall.function.arguments);
-    } catch {
+    if (!output || typeof output !== "object" || Array.isArray(output)) {
       return { error: "AI returned invalid JSON for layer selection" };
     }
+    const args = output as { layerIndex?: number | string; reasoning?: string };
 
     const layerIndex = typeof args.layerIndex === "number" ? args.layerIndex : parseInt(String(args.layerIndex), 10);
     if (isNaN(layerIndex) || layerIndex < 1 || layerIndex > input.layers.length) {

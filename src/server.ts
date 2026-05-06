@@ -36,9 +36,7 @@ app.get("/analysis/by-app/:network/:appId", async (req, res) => {
   const result = await analyzeImage(resolved.imageRef, "latest");
 
   if ("error" in result) {
-    const status = result.error.includes("OPENAI_API_KEY")
-      ? 500
-      : result.error.includes("No layers match") || result.error.includes("No readable")
+    const status = result.error.includes("No layers match") || result.error.includes("No readable")
         ? 404
         : 500;
     return res.status(status).json({ error: result.error });
@@ -99,9 +97,7 @@ app.post("/chat/by-app/:network/:appId", async (req, res) => {
   );
 
   if ("error" in result) {
-    const status = result.error.includes("OPENAI_API_KEY")
-      ? 500
-      : result.error.includes("No layers match") || result.error.includes("No readable")
+    const status = result.error.includes("No layers match") || result.error.includes("No readable")
         ? 404
         : 500;
     return res.status(status).json({ error: result.error });

@@ -1,7 +1,6 @@
 /**
  * Reusable explore logic - returns JSON result for a given image ref.
- * Uses AI to select the app layer when OPENAI_API_KEY is set; falls back to
- * "npm run build" filter when DC_EXPLORER_LEGACY_LAYER=1.
+ * Uses AI to select the app layer.
  */
 
 import {
@@ -44,22 +43,8 @@ export interface ExploreResult {
   concatenatedJsContent: string;
 }
 
-function getLayerIndex(
-  layers: { index: number }[],
-  createdByList: (string | undefined)[],
-  fullRef: string
-): { layerIndex: number } | { error: string } {
-  const npmRunBuildLayers = layers.filter((l, i) =>
-    (createdByList[i] ?? "").toLowerCase().includes("npm run build")
-  );
-  if (npmRunBuildLayers.length === 0) {
-    return { error: `No layers match "npm run build" in image ${fullRef}` };
-  }
-  return { layerIndex: npmRunBuildLayers[0].index };
-}
-
 /**
- * Explore image, select app layer (via AI or legacy), return its contents as JSON.
+ * Explore image, select app layer via AI, return its contents as JSON.
  */
 export async function getExploreResult(
   imageRef: string,
@@ -78,29 +63,20 @@ export async function getExploreResult(
 
     const createdByList = getAllLayersCreatedBy(config, layers.length);
 
-    let layerIndex: number;
-    if (process.env.DC_EXPLORER_LEGACY_LAYER === "1") {
-      console.error("[explore] Using legacy layer selection (npm run build)");
-      const legacy = getLayerIndex(layers, createdByList, fullRef);
-      if ("error" in legacy) return { error: legacy.error };
-      layerIndex = legacy.layerIndex;
-      console.error(`[explore] Selected layer ${layerIndex} (npm run build)`);
-    } else {
-      console.error("[explore] Calling AI for layer selection...");
-      const cfg = config.config ?? config.Config;
-      const selection = await selectLayerWithAI({
-        layers,
-        createdBy: createdByList,
-        config: {
-          Cmd: cfg?.Cmd,
-          Entrypoint: cfg?.Entrypoint,
-          WorkingDir: cfg?.WorkingDir,
-        },
-      });
-      if ("error" in selection) return { error: selection.error };
-      layerIndex = selection.layerIndex;
-      console.error(`[explore] AI selected layer ${layerIndex}`);
-    }
+    console.error("[explore] Calling AI for layer selection...");
+    const cfg = config.config ?? config.Config;
+    const selection = await selectLayerWithAI({
+      layers,
+      createdBy: createdByList,
+      config: {
+        Cmd: cfg?.Cmd,
+        Entrypoint: cfg?.Entrypoint,
+        WorkingDir: cfg?.WorkingDir,
+      },
+    });
+    if ("error" in selection) return { error: selection.error };
+    const layerIndex = selection.layerIndex;
+    console.error(`[explore] AI selected layer ${layerIndex}`);
 
     const layerInfo = layers[layerIndex - 1];
     if (!layerInfo) {

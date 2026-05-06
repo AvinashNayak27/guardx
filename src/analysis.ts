@@ -1,9 +1,9 @@
 /**
  * AI-powered security audit of Docker image code.
- * Requires OPENAI_API_KEY in environment.
  */
 
-import OpenAI from "openai";
+import { eigen } from "@layr-labs/ai-gateway-provider";
+import { generateText } from "ai";
 import { getExploreResult } from "./explore.js";
 
 const SYSTEM_PROMPT = `You are a senior blockchain and smart contract security auditor specializing in Eigen Compute deployments. Your task is to analyze application code extracted from a Docker image and produce a security report.
@@ -158,11 +158,6 @@ export async function analyzeImage(
     }
   | { error: string }
 > {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { error: "OPENAI_API_KEY is not set in environment" };
-  }
-
   const exploreResult = await getExploreResult(imageRef, tag);
   if ("error" in exploreResult) {
     return { error: exploreResult.error };
@@ -177,25 +172,19 @@ export async function analyzeImage(
     return { error: "No readable code found in layer" };
   }
 
-  const openai = new OpenAI({ apiKey });
-
   try {
-    const model = process.env.OPENAI_MODEL ?? "gpt-5.2";
+    const model = "anthropic/claude-sonnet-4.6";
+    const prompt = `${SYSTEM_PROMPT}
 
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Analyze this application code from Docker image ${exploreResult.image}:\n\n${code}`,
-        },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.2,
+Analyze this application code from Docker image ${exploreResult.image}:
+
+${code}`;
+    const { text } = await generateText({
+      model: eigen(model),
+      prompt,
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const content = text?.trim();
     if (!content) {
       return { error: "No response from AI model" };
     }

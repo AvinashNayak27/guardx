@@ -1,9 +1,9 @@
 /**
  * Chat agent for Q&A about Docker image code.
- * Requires OPENAI_API_KEY in environment.
  */
 
-import OpenAI from "openai";
+import { eigen } from "@layr-labs/ai-gateway-provider";
+import { generateText } from "ai";
 import { getExploreResult } from "./explore.js";
 
 export interface ChatMessage {
@@ -27,11 +27,6 @@ export async function chatWithAgent(
   message: string,
   history: ChatMessage[] = []
 ): Promise<ChatResult | { error: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { error: "OPENAI_API_KEY is not set in environment" };
-  }
-
   const exploreResult = await getExploreResult(imageRef, tag);
   if ("error" in exploreResult) {
     return { error: exploreResult.error };
@@ -52,26 +47,30 @@ ${code}
 
 --- End of Code ---`;
 
-  const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_MODEL ?? "gpt-5-mini";
+  const model = "anthropic/claude-sonnet-4.6";
+  const formattedHistory = history
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join("\n\n");
+  const prompt = `${systemPrompt}
 
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    ...history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content })),
-    { role: "user", content: message },
-  ];
+--- Conversation History ---
+${formattedHistory || "(none)"}
+--- End Conversation History ---
+
+USER: ${message}
+
+Provide a direct answer grounded only in the provided code context.`;
 
   try {
     console.error(`[chat] Calling ${model} (${systemPrompt.length} chars context)...`);
-    const completion = await openai.chat.completions.create({
-      model,
-      messages,
+    const { text } = await generateText({
+      model: eigen(model),
+      prompt,
     });
 
-    const reply = completion.choices[0]?.message?.content;
-    console.error(`[chat] OpenAI responded (${reply?.length ?? 0} chars)`);
+    const reply = text?.trim();
+    console.error(`[chat] Model responded (${reply?.length ?? 0} chars)`);
     if (!reply) {
       return { error: "No response from AI model" };
     }
