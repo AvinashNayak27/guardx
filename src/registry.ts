@@ -18,6 +18,8 @@ const DOCKER_HUB_REGISTRY = "registry-1.docker.io";
 const DOCKER_IO_ALIAS = "docker.io";
 const MANIFEST_LIST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.list.v2+json";
 const IMAGE_MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.v2+json";
+const OCI_IMAGE_INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json";
+const OCI_IMAGE_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json";
 
 /**
  * Normalize registry host for API calls. docker.io -> registry-1.docker.io.
@@ -85,27 +87,80 @@ export function parseImageRef(imageRef: string): ParsedImageRef {
   };
 }
 
+function parseBearerChallenge(challenge: string): Record<string, string> {
+  const match = challenge.match(/^Bearer\s+(.+)$/i);
+  if (!match) return {};
+
+  const params: Record<string, string> = {};
+  const parts = match[1].match(/([a-zA-Z]+)="([^"]*)"/g) ?? [];
+  for (const part of parts) {
+    const kv = part.match(/^([a-zA-Z]+)="([^"]*)"$/);
+    if (!kv) continue;
+    params[kv[1].toLowerCase()] = kv[2];
+  }
+  return params;
+}
+
 /**
- * Get the auth token for Docker Hub (handles anonymous and basic auth).
- * Docker Hub requires token auth for most operations.
+ * Request a bearer token for a registry based on its WWW-Authenticate challenge.
  */
-async function getDockerHubToken(
-  repository: string,
-  registry: string = DOCKER_HUB_REGISTRY
+async function getRegistryTokenFromChallenge(
+  challenge: string,
+  repository: string
 ): Promise<string | null> {
-  if (registry !== DOCKER_HUB_REGISTRY) {
-    return null;
+  const params = parseBearerChallenge(challenge);
+  const realm = params.realm;
+  if (!realm) return null;
+
+  const tokenUrl = new URL(realm);
+  tokenUrl.searchParams.set("scope", params.scope ?? `repository:${repository}:pull`);
+  if (params.service) {
+    tokenUrl.searchParams.set("service", params.service);
   }
 
-  const authUrl = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repository}:pull`;
-  const res = await fetch(authUrl);
+  const res = await fetch(tokenUrl.toString());
+  if (!res.ok) return null;
 
-  if (!res.ok) {
-    return null;
+  const data = (await res.json()) as { token?: string; access_token?: string };
+  return data.token ?? data.access_token ?? null;
+}
+
+/**
+ * Best-effort auth fetch:
+ * - pre-auth Docker Hub anonymously to avoid an extra round-trip
+ * - for any registry (including GHCR), handle Bearer challenge on 401
+ */
+async function fetchWithRegistryAuth(
+  url: string,
+  repository: string,
+  headers: Record<string, string>
+): Promise<Response> {
+  if (url.includes(`https://${DOCKER_HUB_REGISTRY}/`)) {
+    const dockerHubTokenUrl = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repository}:pull`;
+    const tokenRes = await fetch(dockerHubTokenUrl);
+    if (tokenRes.ok) {
+      const tokenData = (await tokenRes.json()) as { token?: string };
+      if (tokenData.token) {
+        headers["Authorization"] = `Bearer ${tokenData.token}`;
+      }
+    }
   }
 
-  const data = (await res.json()) as { token?: string };
-  return data.token ?? null;
+  let res = await fetch(url, { headers });
+  if (res.status !== 401) return res;
+
+  const challenge = res.headers.get("www-authenticate");
+  if (!challenge || !/^Bearer\s+/i.test(challenge)) return res;
+
+  const token = await getRegistryTokenFromChallenge(challenge, repository);
+  if (!token) return res;
+
+  const retryHeaders = {
+    ...headers,
+    Authorization: `Bearer ${token}`,
+  };
+  res = await fetch(url, { headers: retryHeaders });
+  return res;
 }
 
 /**
@@ -116,15 +171,15 @@ export async function fetchManifest(parsed: ParsedImageRef): Promise<Manifest> {
   const ref = parsed.digest ?? parsed.tag;
   const baseUrl = `https://${parsed.registry}/v2/${parsed.repository}/manifests/${ref}`;
 
-  const token = await getDockerHubToken(parsed.repository, parsed.registry);
   const headers: Record<string, string> = {
-    Accept: `${MANIFEST_LIST_MEDIA_TYPE}, ${IMAGE_MANIFEST_MEDIA_TYPE}`,
+    Accept: [
+      MANIFEST_LIST_MEDIA_TYPE,
+      IMAGE_MANIFEST_MEDIA_TYPE,
+      OCI_IMAGE_INDEX_MEDIA_TYPE,
+      OCI_IMAGE_MANIFEST_MEDIA_TYPE,
+    ].join(", "),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(baseUrl, { headers });
+  const res = await fetchWithRegistryAuth(baseUrl, parsed.repository, headers);
 
   if (!res.ok) {
     const text = await res.text();
@@ -196,15 +251,10 @@ async function fetchManifestByDigest(
 ): Promise<ImageManifestV2> {
   const baseUrl = `https://${parsed.registry}/v2/${parsed.repository}/manifests/${digest}`;
 
-  const token = await getDockerHubToken(parsed.repository, parsed.registry);
   const headers: Record<string, string> = {
-    Accept: IMAGE_MANIFEST_MEDIA_TYPE,
+    Accept: [IMAGE_MANIFEST_MEDIA_TYPE, OCI_IMAGE_MANIFEST_MEDIA_TYPE].join(", "),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(baseUrl, { headers });
+  const res = await fetchWithRegistryAuth(baseUrl, parsed.repository, headers);
 
   if (!res.ok) {
     const text = await res.text();
@@ -226,13 +276,8 @@ export async function fetchLayerBlob(
 ): Promise<ArrayBuffer> {
   const blobUrl = `https://${parsed.registry}/v2/${parsed.repository}/blobs/${digest}`;
 
-  const token = await getDockerHubToken(parsed.repository, parsed.registry);
   const headers: Record<string, string> = {};
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(blobUrl, { headers });
+  const res = await fetchWithRegistryAuth(blobUrl, parsed.repository, headers);
 
   if (!res.ok) {
     const text = await res.text();
