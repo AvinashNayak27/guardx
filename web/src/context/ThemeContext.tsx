@@ -21,7 +21,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (current === "light" || current === "dark") {
       setTheme(current);
     } else {
-      const stored = localStorage.getItem("dc-explorer-theme") as Theme | null;
+      const stored = localStorage.getItem("guardx-theme") as Theme | null;
       if (stored === "light" || stored === "dark") {
         setTheme(stored);
       } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
@@ -35,7 +35,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("dc-explorer-theme", theme);
+    localStorage.setItem("guardx-theme", theme);
   }, [theme, mounted]);
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));

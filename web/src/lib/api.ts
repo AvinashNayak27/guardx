@@ -1,5 +1,50 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
+export interface ReleaseInfo {
+  appId: string;
+  rmsReleaseId: string;
+  imageDigest: string;
+  registryUrl: string;
+  createdAt: string;
+}
+
+export interface ReleaseChangeLog {
+  hasPreviousRelease: boolean;
+  imageDigestChanged: boolean;
+  registryUrlChanged: boolean;
+  publicEnvChanged: boolean;
+  latestCreatedAt: string;
+  previousCreatedAt: string | null;
+  summary: string[];
+}
+
+export interface AnalysisMetadata {
+  timestamp?: string;
+  exploreDigest?: string | null;
+  resolvedImageRef?: string;
+  resolverSource?: "api" | "chain";
+  latestRelease?: ReleaseInfo | null;
+  previousRelease?: ReleaseInfo | null;
+  releaseChangeLog?: ReleaseChangeLog | null;
+  [key: string]: unknown;
+}
+
+export interface AnalysisByAppResponse {
+  analysis: Record<string, unknown>;
+  image: string;
+  rawResponse?: string;
+  metadata?: AnalysisMetadata;
+  [key: string]: unknown;
+}
+
+export type AnalysisJobResponse =
+  | AnalysisByAppResponse
+  | {
+      status: "idle" | "running" | "failed";
+      error?: string;
+      metadata?: AnalysisMetadata;
+    };
+
 /** Hostname -> network key mapping for Eigen Verify links */
 const HOST_TO_NETWORK: Record<string, string> = {
   "verify-sepolia.eigencloud.xyz": "sepolia",
@@ -73,14 +118,42 @@ export async function postChat(
 }
 
 export async function getAnalysisByApp(network: string, appId: string) {
+  return getLatestAnalysisByApp(network, appId);
+}
+
+export async function getLatestAnalysisByApp(
+  network: string,
+  appId: string
+): Promise<AnalysisJobResponse> {
   const res = await fetch(
-    `${API_BASE}/analysis/by-app/${encodeURIComponent(network)}/${encodeURIComponent(appId)}`
+    `${API_BASE}/analysis/by-app/${encodeURIComponent(network)}/${encodeURIComponent(appId)}/latest`
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
   }
   return res.json();
+}
+
+export async function refreshAnalysisByApp(
+  network: string,
+  appId: string
+): Promise<AnalysisJobResponse> {
+  const res = await fetch(
+    `${API_BASE}/analysis/by-app/${encodeURIComponent(network)}/${encodeURIComponent(appId)}/refresh`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? res.statusText);
+  }
+  return res.json();
+}
+
+export function isAnalysisReport(
+  response: AnalysisJobResponse
+): response is AnalysisByAppResponse {
+  return "analysis" in response;
 }
 
 export async function postChatByApp(

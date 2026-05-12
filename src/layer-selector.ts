@@ -3,10 +3,10 @@
  * containing application code.
  */
 
-import { eigen } from "@layr-labs/ai-gateway-provider";
 import { generateText, Output } from "ai";
 import type { ImageConfig } from "./types.js";
 import type { LayerInfo } from "./layers.js";
+import { getInferenceModel, getInferenceModelName } from "./inference.js";
 
 const MANIFEST_ANALYSIS_PROMPT = `You are an expert at analyzing Docker image manifests. Given a Docker image's layer metadata and config, determine which layer (by 1-based index) contains the application source code that will be executed at runtime.
 
@@ -46,7 +46,11 @@ export async function selectLayerWithAI(
     config: input.config,
   };
 
-  const model = "openai/gpt-4o";
+  const modelOptions = {
+    eigenModel: "openai/gpt-4o",
+    openaiModel: "gpt-5.5",
+  };
+  const model = getInferenceModelName(modelOptions);
   console.error(`[layer-selector] Calling ${model} with ${input.layers.length} layers`);
 
   try {
@@ -59,7 +63,7 @@ ${JSON.stringify(manifestSummary, null, 2)}
 Return valid JSON only with this shape:
 {"layerIndex": number, "reasoning": "brief explanation"}`;
     const { output } = await generateText({
-      model: eigen(model),
+      model: getInferenceModel(modelOptions),
       output: Output.json(),
       prompt,
     });

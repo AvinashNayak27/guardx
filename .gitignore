@@ -6,3 +6,4 @@ web/.next/
 .DS_Store
 .env
 web/.env
+data/reports/

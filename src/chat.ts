@@ -2,9 +2,9 @@
  * Chat agent for Q&A about Docker image code.
  */
 
-import { eigen } from "@layr-labs/ai-gateway-provider";
 import { generateText } from "ai";
 import { getExploreResult } from "./explore.js";
+import { getInferenceModel, getInferenceModelName } from "./inference.js";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -47,7 +47,8 @@ ${code}
 
 --- End of Code ---`;
 
-  const model = "anthropic/claude-sonnet-4.6";
+  const modelOptions = { eigenModel: "anthropic/claude-sonnet-4.6" };
+  const model = getInferenceModelName(modelOptions);
   const formattedHistory = history
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
@@ -65,7 +66,7 @@ Provide a direct answer grounded only in the provided code context.`;
   try {
     console.error(`[chat] Calling ${model} (${systemPrompt.length} chars context)...`);
     const { text } = await generateText({
-      model: eigen(model),
+      model: getInferenceModel(modelOptions),
       prompt,
     });
 

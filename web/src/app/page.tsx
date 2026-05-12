@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { getAnalysisByApp, parseEigenVerifyLink, postChatByApp } from "@/lib/api";
+import { useRef, useState } from "react";
+import {
+  getLatestAnalysisByApp,
+  isAnalysisReport,
+  parseEigenVerifyLink,
+  postChatByApp,
+  refreshAnalysisByApp,
+  type AnalysisJobResponse,
+} from "@/lib/api";
 import { AnalysisTab } from "@/components/AnalysisTab";
 import { ChatTab } from "@/components/ChatTab";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -10,6 +17,7 @@ import type { AttestationData } from "@/components/AttestationInfo";
 type Tab = "analysis" | "chat";
 
 export default function Home() {
+  const analysisRequestId = useRef(0);
   const [input, setInput] = useState("");
   const [parsed, setParsed] = useState<{
     appId: string;
@@ -27,8 +35,48 @@ export default function Home() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
+  const applyResolvedImageRef = (response: AnalysisJobResponse) => {
+    const resolvedRef = response.metadata?.resolvedImageRef;
+    if (resolvedRef) {
+      setParsed((prev) => (prev ? { ...prev, resolvedImageRef: resolvedRef } : null));
+    }
+  };
+
+  const waitForLatestAnalysis = async (
+    network: string,
+    appId: string,
+    isCurrentRequest: () => boolean
+  ) => {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!isCurrentRequest()) return;
+
+      const latest = await getLatestAnalysisByApp(network, appId);
+      if (!isCurrentRequest()) return;
+      applyResolvedImageRef(latest);
+
+      if (isAnalysisReport(latest)) {
+        setAnalysisData(latest);
+        return;
+      }
+
+      if (latest.status === "failed") {
+        setAnalysisError(latest.error ?? "Analysis failed");
+        return;
+      }
+    }
+
+    if (isCurrentRequest()) {
+      setAnalysisError("Analysis is still running. Check the latest report again in a moment.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const requestId = analysisRequestId.current + 1;
+    analysisRequestId.current = requestId;
+    const isCurrentRequest = () => analysisRequestId.current === requestId;
+
     setError("");
     setAnalysisError(null);
     const p = parseEigenVerifyLink(input);
@@ -43,16 +91,29 @@ export default function Home() {
     setAnalysisLoading(true);
     setAnalysisData(null);
     try {
-      const data = (await getAnalysisByApp(p.network, p.appId)) as Record<string, unknown>;
-      setAnalysisData(data);
-      const resolvedRef = (data.metadata as { resolvedImageRef?: string } | undefined)?.resolvedImageRef;
-      if (resolvedRef) {
-        setParsed((prev) => (prev ? { ...prev, resolvedImageRef: resolvedRef } : null));
+      const initial = await refreshAnalysisByApp(p.network, p.appId);
+      if (!isCurrentRequest()) return;
+      applyResolvedImageRef(initial);
+
+      if (isAnalysisReport(initial)) {
+        setAnalysisData(initial);
+        return;
       }
+
+      if (initial.status === "failed") {
+        setAnalysisError(initial.error ?? "Analysis failed");
+        return;
+      }
+
+      await waitForLatestAnalysis(p.network, p.appId, isCurrentRequest);
     } catch (err) {
-      setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+      if (isCurrentRequest()) {
+        setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+      }
     } finally {
-      setAnalysisLoading(false);
+      if (isCurrentRequest()) {
+        setAnalysisLoading(false);
+      }
     }
   };
 

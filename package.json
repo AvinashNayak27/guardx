@@ -1,5 +1,5 @@
 {
-  "name": "dc-explorer",
+  "name": "guardx",
   "version": "1.0.0",
   "description": "Guardx — Independent verifiable security auditor for EigenCloud TEE applications",
   "main": "dist/server.js",
@@ -9,14 +9,17 @@
     "start": "node dist/server.js",
     "server": "tsx src/server.ts",
     "server:build": "tsc && node dist/server.js",
-    "dev": "tsx src/server.ts",
-    "web": "npm run dev --prefix web",
-    "web:build": "npm run build --prefix web",
-    "web:start": "npm run start --prefix web"
+    "dev": "tsx src/server.ts"
   },
-  "keywords": ["docker", "layers", "registry", "docker-hub"],
+  "keywords": [
+    "docker",
+    "layers",
+    "registry",
+    "docker-hub"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
     "@layr-labs/ai-gateway-provider": "^1.0.1",
     "ai": "^6.0.168",
     "cors": "^2.8.6",
