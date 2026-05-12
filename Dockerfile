@@ -32,6 +32,7 @@ RUN npm ci --omit=dev
 
 # Copy built output from builder
 COPY --from=builder /app/dist ./dist
+COPY skills ./skills
 
 EXPOSE 3000
 

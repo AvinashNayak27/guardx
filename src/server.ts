@@ -10,7 +10,8 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { attestResponse } from "./attest.js";
 import { analyzeImage } from "./analysis.js";
 import { chatWithAgent } from "./chat.js";
@@ -28,7 +29,8 @@ import {
 
 const app = express();
 const PORT = process.env.PORT ?? 3000;
-const SKILL_FILE_PATH = join(process.cwd(), "skills", "guardx", "SKILL.md");
+const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SKILL_FILE_PATH = join(APP_ROOT, "skills", "guardx", "SKILL.md");
 const analysisJobs = new Map<string, Promise<void>>();
 type ResolvedApp = Exclude<
   Awaited<ReturnType<typeof resolveAppToImageRef>>,
