@@ -91,7 +91,7 @@ export default function Home() {
     setAnalysisLoading(true);
     setAnalysisData(null);
     try {
-      const initial = await refreshAnalysisByApp(p.network, p.appId);
+      const initial = await getLatestAnalysisByApp(p.network, p.appId);
       if (!isCurrentRequest()) return;
       applyResolvedImageRef(initial);
 
@@ -103,6 +103,22 @@ export default function Home() {
       if (initial.status === "failed") {
         setAnalysisError(initial.error ?? "Analysis failed");
         return;
+      }
+
+      if (initial.status === "idle") {
+        const refreshed = await refreshAnalysisByApp(p.network, p.appId);
+        if (!isCurrentRequest()) return;
+        applyResolvedImageRef(refreshed);
+
+        if (isAnalysisReport(refreshed)) {
+          setAnalysisData(refreshed);
+          return;
+        }
+
+        if (refreshed.status === "failed") {
+          setAnalysisError(refreshed.error ?? "Analysis failed");
+          return;
+        }
       }
 
       await waitForLatestAnalysis(p.network, p.appId, isCurrentRequest);
